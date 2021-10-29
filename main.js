@@ -89,7 +89,7 @@
         return inputBPM;
     })();
     addBtn(body, '処理開始', () => main());
-    const main = () => download(outputMIDI(cleanMIDI()), 'midiClean.mid');
+    const main = () => download(outputMIDI(toHeap(cleanMIDI())), 'midiClean.mid');
     const download = (url, ttl) => $('<a>').prop({
         href: url,
         download: ttl
@@ -137,7 +137,7 @@
             const {start, end} = node;
             if(start - end < inputThreshold()) node.muted = true;
         }
-        return vector.filter(({muted}) => !muted);
+        return vector;
     };
     class Node {
         constructor(note, velocity, start){
@@ -148,20 +148,19 @@
             this.muted = false;
         }
     }
-    const outputMIDI = heap => {
-        const {timeDivision} = g_midi,
-              deltaToMs = 1000 * 60 / inputBPM() / timeDivision;
-        let track = midi.addTrack();
+    const {Heap} = await import('https://rpgen3.github.io/maze/mjs/heap/Heap.mjs');
+    const toHeap = nodes => {
+        const heap = new Heap();
+        let currentTime = 0;
         for(const node of nodes) {
-            const {note, velocity, start, end} = node,
-                  [_start, _end] = [start, end].map(v => v * deltaToMs);
-            track.addNote({
-                midi: note,
-                time: _start,
-                velocity: velocity / 0x7F,
-                duration: _start - _end
-            });
+            const {note, start, end, muted} = node;
+            if(muted) continue;
+            heap.push(start, node);
+            heap.push(end, new Node(note, 0, end));
         }
+        return heap;
+    };
+    const outputMIDI = heap => {
         const arr = [];
         HeaderChunks(arr);
         TrackChunks(arr, heap);
@@ -184,10 +183,12 @@
         arr.push(0x00, 0x00, 0x00, 0x06); // データ長(4byte)
         arr.push(...DeltaTime(0));
         arr.push(0xFF, 0x51, 0x03, ...to3byte(60000000 / inputBPM)); // テンポ
+        let currentTime = 0;
         while(heap.length) {
-            const {deltaTime, note, velocity} = heap.pop();
-            arr.push(...DeltaTime(deltaTime));
+            const {note, velocity, start} = heap.pop();
+            arr.push(...DeltaTime(start - currentTime));
             arr.push(0x90, note, velocity);
+            currentTime = start;
         }
         arr.push(...DeltaTime(0));
         arr.push(0xFF, 0x2F, 0x00); // トラックチャンクの終わりを示す
