@@ -96,15 +96,13 @@
         download: ttl
     }).get(0).click();
     const cleanMIDI = () => {
-        const {formatType, tracks, track} = g_midi;
-        if(tracks !== 1) throw `MIDI tracks is ${formatType}.`;
-        if(formatType !== 1) throw `MIDI formatType is ${formatType}.`;
-        const vector = [],
+        const {track} = g_midi,
+              vector = [],
               now = new Map,
               arrMap = new Map;
         let currentTime = 0;
-        for(const {event} of track[0]) { // 全noteを回収
-            const {deltaTime, type, data} = event;
+        for(const v of track[0].event) { // 全noteを回収
+            const {deltaTime, type, data} = v;
             currentTime += deltaTime;
             if(type === 8 || type === 9) {
                 const [note, velocity] = data,
@@ -152,6 +150,20 @@
         }
     }
     const outputMIDI = nodes => {
-        const midi = new Midi();
+        const {timeDivision} = g_midi,
+              deltaToMs = 1000 * 60 / inputBPM() / timeDivision,
+              midi = new Midi(),
+              track = midi.addTrack();
+        for(const node of nodes) {
+            const {note, velocity, start, end} = node,
+                  [_start, _end] = [start, end].map(v => v * deltaToMs);
+            track.addNote({
+                midi: note,
+                time : _start,
+                velocity: velocity / 0x7F,
+                duration: _start - _end
+            });
+        }
+        return URL.createObjectURL(new Blob(midi.toArray(), {type: 'audio/midi'}));
     };
 })();
