@@ -27,6 +27,11 @@
     const sleep = ms => new Promise(resolve => setTimeout(resolve, ms)),
           dialog = async str => (msg(str), sleep(30));
     $('<div>').appendTo(head).text('MIDIファイルのゴミを掃除する');
+    $('<a>').appendTo($('<div>').appendTo(head)).prop({
+        href: 'https://www.bearaudiotool.com/jp/mp3-to-midi',
+        target: '_blank',
+        rel: 'noopener noreferrer'
+    }).text('mp3からMIDIに変換するツール');
     let g_midi = null;
     MidiParser.parse($('<input>').appendTo(head).prop({
         type: 'file',
@@ -39,7 +44,8 @@
     $('<div>').appendTo(body).text('諸々の調整');
     const inputThreshold = rpgen3.addInputNum(body,{
         label: 'δ時間の閾値',
-        save: true
+        save: true,
+        value: 15
     });
     addBtn(body, 'MIDIデータからBPMを取得する', () => {
         const {track} = g_midi;
@@ -135,7 +141,7 @@
         }
         for(const node of vector) { // 閾値未満の音を消す
             const {start, end} = node;
-            if(start - end < inputThreshold()) node.muted = true;
+            if(end - start < inputThreshold()) node.muted = true;
         }
         return vector;
     };
@@ -164,13 +170,14 @@
         const arr = [];
         HeaderChunks(arr);
         TrackChunks(arr, heap);
-        return URL.createObjectURL(new Blob(new Uint8Array(arr), {type: 'audio/midi'}));
+        return URL.createObjectURL(new Blob([new Uint8Array(arr).buffer], {type: 'audio/midi'}));
     };
     const to2byte = n => [(n & 0xff00) >> 8, n & 0xff],
-          to3byte = n => [(n & 0xff0000) >> 16, ...to2byte(n)];
+          to3byte = n => [(n & 0xff0000) >> 16, ...to2byte(n)],
+          to4byte = n => [(n & 0xff000000) >> 24, ...to3byte(n)];
     const HeaderChunks = arr => {
         arr.push(0x4D, 0x54, 0x68, 0x64); // チャンクタイプ(4byte)
-        arr.push(0x00, 0x00, 0x00, 0x06); // データ長(4byte)
+        arr.push(...to4byte(6)); // データ長(4byte)
         const {formatType, tracks, timeDivision} = g_midi;
         for(const v of [
             formatType,
@@ -180,18 +187,20 @@
     };
     const TrackChunks = (arr, heap) => {
         arr.push(0x4D, 0x54, 0x72, 0x6B); // チャンクタイプ(4byte)
-        arr.push(0x00, 0x00, 0x00, 0x06); // データ長(4byte)
-        arr.push(...DeltaTime(0));
-        arr.push(0xFF, 0x51, 0x03, ...to3byte(60000000 / inputBPM)); // テンポ
+        const a = [];
+        a.push(...DeltaTime(0));
+        a.push(0xFF, 0x51, 0x03, ...to3byte(60000000 / inputBPM)); // テンポ
         let currentTime = 0;
         while(heap.length) {
             const {note, velocity, start} = heap.pop();
-            arr.push(...DeltaTime(start - currentTime));
-            arr.push(0x90, note, velocity);
+            a.push(...DeltaTime(start - currentTime));
+            a.push(0x90, note, velocity);
             currentTime = start;
         }
-        arr.push(...DeltaTime(0));
-        arr.push(0xFF, 0x2F, 0x00); // トラックチャンクの終わりを示す
+        a.push(...DeltaTime(0));
+        a.push(0xFF, 0x2F, 0x00); // トラックチャンクの終わりを示す
+        arr.push(...to4byte(a.length)); // データ長(4byte)
+        for(const v of a) arr.push(v);
     };
     const DeltaTime = n => { // 可変長数値表現
         if(n === 0) return [0];
