@@ -2,9 +2,10 @@
     const {importAll, getScript} = await import(`https://rpgen3.github.io/mylib/export/import.mjs`);
     await Promise.all([
         'https://code.jquery.com/jquery-3.3.1.min.js',
-        'https://colxi.info/midi-parser-js/src/main.js'
+        'https://colxi.info/midi-parser-js/src/main.js',
+        'https://unpkg.com/@tonejs/midi' // https://github.com/Tonejs/Midi
     ].map(getScript));
-    const {$, MidiParser} = window;
+    const {$, MidiParser, Midi} = window;
     const rpgen3 = await importAll([
         'input'
     ].map(v => `https://rpgen3.github.io/mylib/export/${v}.mjs`));
@@ -89,9 +90,11 @@
         return inputBPM;
     })();
     addBtn(body, '処理開始', () => main());
-    const main = async data => {
-        cleanMIDI();
-    };
+    const main = () => download(outputMIDI(cleanMIDI()), 'midiClean.mid');
+    const download = (url, ttl) => $('<a>').prop({
+        href: url,
+        download: ttl
+    }).get(0).click();
     const cleanMIDI = () => {
         const {formatType, tracks, track} = g_midi;
         if(tracks !== 1) throw `MIDI tracks is ${formatType}.`;
@@ -148,6 +151,7 @@
             this.muted = false;
         }
     }
-    const output = () => {
+    const outputMIDI = nodes => {
+        const midi = new Midi();
     };
 })();
