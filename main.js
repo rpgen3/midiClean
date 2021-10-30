@@ -6,8 +6,7 @@
     ].map(getScript));
     const {$, MidiParser} = window;
     const rpgen3 = await importAll([
-        'input',
-        'util'
+        'input'
     ].map(v => `https://rpgen3.github.io/mylib/export/${v}.mjs`));
     const addBtn = (h, ttl, func) => $('<button>').appendTo(h).text(ttl).on('click', func);
     const html = $('body').empty().css({
@@ -27,19 +26,12 @@
     })();
     const sleep = ms => new Promise(resolve => setTimeout(resolve, ms)),
           dialog = async str => (msg(str), sleep(30));
-    const piano = (()=>{
-        const semiTone = Math.exp(1/12 * Math.log(2)),
-              hz = [...new Array(87)].reduce((p, x) => ([p[0] * semiTone].concat(p)), [27.5]).reverse(),
-              ar = [],
-              ptn = 'AABCCDDEFFGG',
-              idxs = ptn.split('').map(v => ptn.indexOf(v));
-        for(const i of hz.keys()){
-            const j = i % ptn.length;
-            ar.push(ptn[j] + (idxs.includes(j) ? '' : '#') + ((i + 9) / ptn.length | 0));
-        }
-        return {hz, hzToNote: ar};
-    })();
-    $('<div>').appendTo(head).text('MIDIファイルを読み込む');
+    $('<div>').appendTo(head).text('MIDIファイルのゴミを掃除する');
+    $('<a>').appendTo($('<div>').appendTo(head)).prop({
+        href: 'https://www.bearaudiotool.com/jp/mp3-to-midi',
+        target: '_blank',
+        rel: 'noopener noreferrer'
+    }).text('mp3からMIDIに変換するツール');
     let g_midi = null;
     MidiParser.parse($('<input>').appendTo(head).prop({
         type: 'file',
@@ -48,22 +40,12 @@
         g_midi = result;
         msg('MIDIファイルを読み込んだ');
         body.show();
-        addSelectTracks();
     });
     $('<div>').appendTo(body).text('諸々の調整');
-    const inputMinTone = rpgen3.addInputNum(body,{
-        label: '下限の音階',
+    const inputThreshold = rpgen3.addInputNum(body,{
+        label: 'δ時間の閾値',
         save: true,
-        value: 10,
-        max: piano.hz.length,
-        min: 0
-    });
-    const inputDiff = rpgen3.addInputNum(body,{
-        label: 'setTimeoutの誤差を引く[ms]',
-        save: true,
-        value: 30,
-        max: 500,
-        min: 0
+        value: 15
     });
     addBtn(body, 'MIDIデータからBPMを取得する', () => {
         const {track} = g_midi;
@@ -112,112 +94,123 @@
         });
         return inputBPM;
     })();
-    const hChecks = $('<div>').appendTo(body);
-    const selectTracks = [];
-    const addSelectTracks = () => {
-        const {track} = g_midi;
-        hChecks.empty();
-        while(selectTracks.length) selectTracks.pop();
-        for(const [i, {event}] of track.entries()) selectTracks.push(rpgen3.addInputBool(hChecks,{
-            label: `チャンネル${i}　トラック数：${event.length}`,
-            value: true
-        }));
-    };
     addBtn(body, '処理開始', () => main());
-    const main = async () => {
-        const events = joinWait(trim(makeMusic()));
-        await dialog(`イベントの数：${events.length}`);
-        makeCode(events);
-    };
-    const makeMusic = () => {
+    const main = () => download(outputMIDI(toHeap(cleanMIDI())), 'midiClean.mid');
+    const download = (url, ttl) => $('<a>').prop({
+        href: url,
+        download: ttl
+    }).get(0).click();
+    const cleanMIDI = () => {
         const {track} = g_midi,
-              currentIndexs = [...new Array(track.length).fill(0)],
-              totalTimes = currentIndexs.slice(),
-              _indexs = selectTracks.flatMap((v, i) => v() ? [i] : []),
-              result = [];
+              vector = [],
+              now = new Map,
+              arrMap = new Map;
         let currentTime = 0;
-        const getMin = () => {
-            let min = Infinity,
-                idx = 0;
-            for(const index of _indexs) {
-                const {event} = track[index],
-                      {deltaTime} = event[currentIndexs[index]],
-                      total = deltaTime + totalTimes[index];
-                if(total > min) continue;
-                min = total;
-                idx = index;
-            }
-            return idx;
-        };
-        while(_indexs.length){
-            const index = getMin(),
-                  {event} = track[index],
-                  {deltaTime, type, data} = event[currentIndexs[index]];
-            totalTimes[index] += deltaTime;
-            if(deltaTime) {
-                const total = totalTimes[index],
-                      time = total - currentTime,
-                      i = result.length - 1;
-                if(isNaN(result[i])) result.push(time);
-                else result[i] += time;
-                currentTime = total;
-            }
-            switch(type){
-                case 8:
-                case 9: {
-                    const [note, velocity] = data,
-                          isNoteOFF = type === 8 || !velocity;
-                    if(isNoteOFF) break;
-                    const tone = note - 21;
-                    if(inputMinTone - 1 > tone) continue;
-                    const id = getSoundId[tone];
-                    if(id === void 0) continue;
-                    result.push(playSound(id, 100 * velocity / 0x7F | 0));
-                    break;
+        for(const v of track[0].event) { // 全noteを回収
+            const {deltaTime, type, data} = v;
+            currentTime += deltaTime;
+            if(type === 8 || type === 9) {
+                const [note, velocity] = data,
+                      isNoteOFF = type === 8 || !velocity;
+                if(!arrMap.has(note)) arrMap.set(note, []);
+                const arr = arrMap.get(note);
+                if(now.has(note) && isNoteOFF) {
+                    const node = now.get(note),
+                          {start} = node;
+                    node.end = currentTime;
+                    now.delete(note);
+                }
+                else if(!isNoteOFF) {
+                    const node = new Node(note, velocity, currentTime);
+                    now.set(note, node);
+                    arr.push(node);
+                    vector.push(node);
                 }
             }
-            if(++currentIndexs[index] >= event.length) _indexs.splice(_indexs.indexOf(index), 1);
         }
-        return result;
-    };
-    const trim = arr => {
-        let start = 0,
-            end = arr.length;
-        if(!isNaN(arr[0])) start++;
-        if(!isNaN(arr[end - 1])) end--;
-        return arr.slice(start, end);
-    };
-    const joinWait = arr => {
-        const {timeDivision} = g_midi,
-              deltaToMs = 1000 * 60 / inputBPM() / timeDivision,
-              result = [];
-        for(const v of arr){
-            if(isNaN(v)) result.push(v);
-            else {
-                const time = v - inputDiff();
-                if(time >= 0) result.push(wait(time * deltaToMs | 0));
+        for(const arr of arrMap) { // 細切れをくっつける
+            let last = arr[0];
+            for(let i = 1; i < arr.length; i++) {
+                const now = arr[i];
+                if(now.start - last.end < inputThreshold()) {
+                    last.end = now.end;
+                    now.muted = true;
+                }
+                else last = now;
             }
         }
-        return result;
+        for(const node of vector) { // 閾値未満の音を消す
+            const {start, end} = node;
+            if(end - start < inputThreshold()) node.muted = true;
+        }
+        return vector;
     };
-    const playSound = (i, v) => `#PL_SD\ni:${i},v:${v},`,
-          wait = t => `#WAIT\nt:${t},`;
-    const getSoundId = (() => {
-        const range = (start, end) => [...Array(end - start + 1).keys()].map(v => v + start);
-        return [
-            range(758, 821),
-            range(1575, 1594),
-            range(822, 825)
-        ].flat();
-    })();
-    const rpgen = await importAll([
-        'rpgen',
-        'fullEvent'
-    ].map(v => `https://rpgen3.github.io/midi/export/${v}.mjs`));
-    const mapData = await(await fetch('data.txt')).text();
-    const makeCode = events => rpgen3.addInputStr(foot.empty().show(),{
-        value: rpgen.set(mapData.replace('$music$', `${startEvent}\n\n${new rpgen.FullEvent(10).make(events)}`.trim())),
-        copy: true
-    });
-    const startEvent = new rpgen.FullEvent().make(['#CH_PH\np:0,x:0,y:0,'], 42, 3);
+    class Node {
+        constructor(note, velocity, start){
+            this.note = note;
+            this.velocity = velocity;
+            this.start = start;
+            this.end = -1;
+            this.muted = false;
+        }
+    }
+    const {Heap} = await import('https://rpgen3.github.io/maze/mjs/heap/Heap.mjs');
+    const toHeap = nodes => {
+        const heap = new Heap();
+        let currentTime = 0;
+        for(const node of nodes) {
+            const {note, start, end, muted} = node;
+            if(muted) continue;
+            heap.push(start, node);
+            heap.push(end, new Node(note, 0, end));
+        }
+        return heap;
+    };
+    const outputMIDI = heap => {
+        const arr = [];
+        HeaderChunks(arr);
+        TrackChunks(arr, heap);
+        return URL.createObjectURL(new Blob([new Uint8Array(arr).buffer], {type: 'audio/midi'}));
+    };
+    const to2byte = n => [(n & 0xff00) >> 8, n & 0xff],
+          to3byte = n => [(n & 0xff0000) >> 16, ...to2byte(n)],
+          to4byte = n => [(n & 0xff000000) >> 24, ...to3byte(n)];
+    const HeaderChunks = arr => {
+        arr.push(0x4D, 0x54, 0x68, 0x64); // チャンクタイプ(4byte)
+        arr.push(...to4byte(6)); // データ長(4byte)
+        const {formatType, tracks, timeDivision} = g_midi;
+        for(const v of [
+            formatType,
+            tracks,
+            timeDivision
+        ]) arr.push(...to2byte(v));
+    };
+    const TrackChunks = (arr, heap) => {
+        arr.push(0x4D, 0x54, 0x72, 0x6B); // チャンクタイプ(4byte)
+        const a = [];
+        a.push(...DeltaTime(0));
+        a.push(0xFF, 0x51, 0x03, ...to3byte(60000000 / inputBPM)); // テンポ
+        let currentTime = 0;
+        while(heap.length) {
+            const {note, velocity, start} = heap.pop();
+            a.push(...DeltaTime(start - currentTime));
+            a.push(0x90, note, velocity);
+            currentTime = start;
+        }
+        a.push(...DeltaTime(0));
+        a.push(0xFF, 0x2F, 0x00); // トラックチャンクの終わりを示す
+        arr.push(...to4byte(a.length)); // データ長(4byte)
+        for(const v of a) arr.push(v);
+    };
+    const DeltaTime = n => { // 可変長数値表現
+        if(n === 0) return [0];
+        const arr = [];
+        let i = 0;
+        while(n) {
+            const _7bit = n & 0x7F;
+            n >>= 7;
+            arr.push(_7bit | (i++ ? 0x80 : 0));
+        }
+        return arr;
+    };
 })();
