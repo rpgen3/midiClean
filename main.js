@@ -47,6 +47,13 @@
         save: true,
         value: 15
     });
+    const inputVelocity = rpgen3.addInputNum(body,{
+        label: 'velocityの下限値',
+        save: true,
+        value: 0x00,
+        min: 0x00,
+        max: 0x7F
+    });
     addBtn(body, 'MIDIデータからBPMを取得する', () => {
         const {track} = g_midi;
         let bpm = 0;
@@ -142,6 +149,12 @@
         for(const node of vector) { // 閾値未満の音を消す
             const {start, end} = node;
             if(end - start < inputThreshold()) node.muted = true;
+        }
+        if(inputVelocity()) { // velocityの下限未満の音を消す
+            for(const node of vector) {
+                const {velocity} = node;
+                if(velocity < inputVelocity()) node.muted = true;
+            }
         }
         return vector;
     };
