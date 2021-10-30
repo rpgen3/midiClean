@@ -95,36 +95,37 @@
         return inputBPM;
     })();
     addBtn(body, '処理開始', () => main());
-    const main = () => download(outputMIDI(toHeap(cleanMIDI())), 'midiClean.mid');
+    const main = () => {
+        const {track} = g_midi;
+        download(outputMIDI(track.map(({event}) => cleanMIDI(event)).map(toHeap)), 'midiClean.mid');
+    };
     const download = (url, ttl) => $('<a>').prop({
         href: url,
         download: ttl
     }).get(0).click();
-    const cleanMIDI = () => {
-        const {track} = g_midi,
-              vector = [],
+    const cleanMIDI = event => {
+        const vector = [],
               now = new Map,
               arrMap = new Map;
         let currentTime = 0;
-        for(const v of track[0].event) { // 全noteを回収
+        for(const v of event) { // 全noteを回収
             const {deltaTime, type, data} = v;
             currentTime += deltaTime;
-            if(type === 8 || type === 9) {
-                const [note, velocity] = data,
-                      isNoteOFF = type === 8 || !velocity;
-                if(now.has(note) && isNoteOFF) {
-                    const node = now.get(note),
-                          {start} = node;
-                    node.end = currentTime;
-                    now.delete(note);
-                }
-                else if(!isNoteOFF) {
-                    const node = new Node(note, velocity, currentTime);
-                    now.set(note, node);
-                    vector.push(node);
-                    if(!arrMap.has(note)) arrMap.set(note, []);
-                    arrMap.get(note).push(node);
-                }
+            if(type !== 8 && type !== 9) continue;
+            const [note, velocity] = data,
+                  isNoteOFF = type === 8 || !velocity;
+            if(now.has(note) && isNoteOFF) {
+                const node = now.get(note),
+                      {start} = node;
+                node.end = currentTime;
+                now.delete(note);
+            }
+            else if(!isNoteOFF) {
+                const node = new Node(note, velocity, currentTime);
+                now.set(note, node);
+                vector.push(node);
+                if(!arrMap.has(note)) arrMap.set(note, []);
+                arrMap.get(note).push(node);
             }
         }
         for(const note of now.keys()) arrMap.get(note).pop(); // 終わりが無い音を消す
@@ -166,10 +167,10 @@
         }
         return heap;
     };
-    const outputMIDI = heap => {
+    const outputMIDI = heaps => {
         const arr = [];
         HeaderChunks(arr);
-        TrackChunks(arr, heap);
+        for(const heap of heaps) TrackChunks(arr, heap);
         return URL.createObjectURL(new Blob([new Uint8Array(arr).buffer], {type: 'audio/midi'}));
     };
     const to2byte = n => [(n & 0xff00) >> 8, n & 0xff],
