@@ -108,8 +108,7 @@
               now = new Map,
               arrMap = new Map;
         let currentTime = 0;
-        for(const v of event) { // 全noteを回収
-            const {deltaTime, type, data} = v;
+        for(const {deltaTime, type, data} of event) { // 全noteを回収
             currentTime += deltaTime;
             if(type !== 8 && type !== 9) continue;
             const [note, velocity] = data,
