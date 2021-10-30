@@ -147,12 +147,14 @@
             }
         }
         for(const node of vector) { // 閾値未満の音を消す
-            const {start, end} = node;
+            const {muted, start, end} = node;
+            if(muted) continue;
             if(end - start < inputThreshold()) node.muted = true;
         }
         if(inputVelocity()) { // velocityの下限未満の音を消す
             for(const node of vector) {
-                const {velocity} = node;
+                const {muted, velocity} = node;
+                if(muted) continue;
                 if(velocity < inputVelocity()) node.muted = true;
             }
         }
