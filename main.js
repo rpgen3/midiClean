@@ -142,6 +142,7 @@
                 if(now.start - last.end < inputThreshold()) {
                     last.end = now.end;
                     now.muted = true;
+                    last.velocity = Math.max(last.velocity, now.velocity);
                 }
                 else last = now;
             }
