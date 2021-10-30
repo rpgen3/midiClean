@@ -209,7 +209,7 @@
         while(n) {
             const _7bit = n & 0x7F;
             n >>= 7;
-            arr.push(_7bit | (i++ ? 0x80 : 0));
+            arr.unshift(_7bit | (i++ ? 0x80 : 0));
         }
         return arr;
     };
