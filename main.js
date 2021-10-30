@@ -112,8 +112,6 @@
             if(type === 8 || type === 9) {
                 const [note, velocity] = data,
                       isNoteOFF = type === 8 || !velocity;
-                if(!arrMap.has(note)) arrMap.set(note, []);
-                const arr = arrMap.get(note);
                 if(now.has(note) && isNoteOFF) {
                     const node = now.get(note),
                           {start} = node;
@@ -123,11 +121,13 @@
                 else if(!isNoteOFF) {
                     const node = new Node(note, velocity, currentTime);
                     now.set(note, node);
-                    arr.push(node);
                     vector.push(node);
+                    if(!arrMap.has(note)) arrMap.set(note, []);
+                    arrMap.get(note).push(node);
                 }
             }
         }
+        for(const note of now.keys()) arrMap.get(note).pop(); // 終わりが無い音を消す
         for(const arr of arrMap) { // 細切れをくっつける
             let last = arr[0];
             for(let i = 1; i < arr.length; i++) {
