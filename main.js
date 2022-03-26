@@ -177,8 +177,8 @@
         for(const node of nodes) {
             const {note, start, end, muted} = node;
             if(muted) continue;
-            heap.push(start, node);
-            heap.push(end, new Node(note, 0, end));
+            heap.add(start, node);
+            heap.add(end, new Node(note, 0, end));
         }
         return heap;
     };
